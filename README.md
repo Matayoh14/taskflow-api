@@ -304,7 +304,7 @@ flowchart TD
 
 ### Step 1: Clone the repository
 ```bash
-git clone https://github.com/matayoh14/taskflow.git
+git clone https://github.com/matayoh14/taskflow-api.git
 cd taskflow
 ```
 
