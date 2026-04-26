@@ -12,7 +12,6 @@ import org.springframework.transaction.annotation.Transactional;
 import com.matthewholmes.taskflow.dto.ProjectRequest;
 import com.matthewholmes.taskflow.dto.ProjectResponse;
 import com.matthewholmes.taskflow.model.Project;
-import com.matthewholmes.taskflow.model.Task;
 import com.matthewholmes.taskflow.model.User;
 import com.matthewholmes.taskflow.repository.ProjectRepository;
 import com.matthewholmes.taskflow.repository.UserRepository;
@@ -25,6 +24,7 @@ public class ProjectService {
 
 	private final ProjectRepository projectRepository;
 	private final UserRepository userRepository;
+	private final PermissionService permissionService;
 	
 	@Transactional
 	public ProjectResponse createProject(ProjectRequest request) {
@@ -46,14 +46,21 @@ public class ProjectService {
 		// Get authenticated user
 		User currentUser = getAuthenticatedUser();
 		
-		// Get owned projects
-		List<Project> ownedProjects = projectRepository.findByOwner(currentUser);
-		// Get involved projects
-		List<Project> involvedProjects = projectRepository.findProjectsByAssigneeEmail(currentUser.getEmail());
-		// Combine
 		Set<Project> allProjects = new HashSet<>();
-		allProjects.addAll(ownedProjects);
-		allProjects.addAll(involvedProjects);
+		
+		if(permissionService.isAdmin(currentUser)) {
+			allProjects.addAll(projectRepository.findAll());
+		}
+		else {
+			// Get owned projects
+			List<Project> ownedProjects = projectRepository.findByOwner(currentUser);
+			// Get involved projects
+			List<Project> involvedProjects = projectRepository.findProjectsByAssigneeEmail(currentUser.getEmail());
+			// Combine
+			allProjects.addAll(ownedProjects);
+			allProjects.addAll(involvedProjects);
+		}
+		
 		
 		return allProjects
 				.stream()
@@ -68,9 +75,7 @@ public class ProjectService {
 		Project project = projectRepository.findById(id)
 				.orElseThrow(() -> new RuntimeException("Project not found with id: " + id));
 		
-		// Check access
-		// TODO: Add admin privilege
-		if(!isUserInvolvedWithProject(currentUser.getEmail(), project)) {
+		if(!permissionService.canAccessProject(currentUser, project)) {
 			throw new RuntimeException("Not authorized to access this project");
 		}
 		
@@ -84,9 +89,7 @@ public class ProjectService {
 		Project project = projectRepository.findById(id)
 				.orElseThrow(() -> new RuntimeException("Project not found with id: " + id));
 
-		// Check access
-		// TODO: Add admin privilege
-		if(!project.getOwner().getId().equals(currentUser.getId())) {
+		if(!permissionService.canModifyProject(currentUser, project)) {
 			throw new RuntimeException("Not authorized to update this project");
 		}
 		
@@ -104,9 +107,7 @@ public class ProjectService {
 		Project project = projectRepository.findById(id)
 				.orElseThrow(() -> new RuntimeException("Project not found with id: " + id));
 		
-		// Check access
-		// TODO: Add admin privilege
-		if(!project.getOwner().getId().equals(currentUser.getId())) {
+		if(!permissionService.canModifyProject(currentUser, project)) {
 			throw new RuntimeException("Not authorized to delete this project");
 		}
 		
@@ -124,19 +125,6 @@ public class ProjectService {
 				.createdAt(project.getCreatedAt())
 				.updatedAt(project.getUpdatedAt())
 				.build();
-	}
-	
-	private boolean isUserInvolvedWithProject(String userEmail, Project project) {
-		// Check if is owner
-		if(project.getOwner().getEmail().equals((userEmail))) {
-			return true;
-		}
-		
-		// Check if user has any tasks assigned in this project
-		List<Task> projectTasks = project.getTasks();
-		return projectTasks.stream()
-				.anyMatch(task -> 	task.getAssignee() != null &&
-									task.getAssignee().getEmail().equals(userEmail));
 	}
 	
 	private User getAuthenticatedUser() {
