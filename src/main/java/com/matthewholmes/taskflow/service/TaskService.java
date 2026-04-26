@@ -26,6 +26,7 @@ public class TaskService {
 	private final TaskRepository taskRepository;
 	private final ProjectRepository projectRepository;
 	private final UserRepository userRepository;
+	private final PermissionService permissionService;
 	
 	@Transactional
 	public TaskResponse createTask(TaskRequest request) {
@@ -34,9 +35,7 @@ public class TaskService {
 		Project project = projectRepository.findById(request.getProjectId())
 				.orElseThrow(() -> new RuntimeException("Project not found"));
 		
-		// Access check
-		// TODO: Add admin privilege
-		if(!project.getOwner().getId().equals(currentUser.getId())) {
+		if(!permissionService.canCreateTaskInProject(currentUser, project)) {
 			throw new RuntimeException("Not authorized to access this project");
 		}
 		
@@ -65,10 +64,8 @@ public class TaskService {
 		Project project = projectRepository.findById(projectId)
 				.orElseThrow(() -> new RuntimeException("Project not found"));
 		
-		// Check Access
-		// TODO: Add admin privilege
-		if(!isUserInvolvedWithProject(currentUser.getEmail(), project)) {
-			throw new RuntimeException("Not authorized to view task");
+		if(!permissionService.canAccessProject(currentUser, project)) {
+			throw new RuntimeException("Not authorized to view tasks");
 		}
 		
 		return taskRepository.findByProject(project)
@@ -83,11 +80,8 @@ public class TaskService {
 		User currentUser = getAuthenticatedUser();
 		Task task = taskRepository.findById(id)
 				.orElseThrow(() -> new RuntimeException("Task not found"));
-		Project project = task.getProject();
 	
-		// Check Access
-		// TODO: Add admin privilege
-		if(!isUserInvolvedWithProject(currentUser.getEmail(), project)) {
+		if(!permissionService.canViewTask(currentUser, task)) {
 			throw new RuntimeException("Not authorized to view task");
 		}
 		
@@ -101,12 +95,7 @@ public class TaskService {
 		Task task = taskRepository.findById(id)
 				.orElseThrow(() -> new RuntimeException("Task not found"));
 		
-		boolean isCreator = task.getCreator().getId().equals(currentUser.getId());
-		boolean isAssignee = task.getAssignee() != null && task.getAssignee().getId().equals(currentUser.getId());
-		
-		// Access check
-		// TODO: Add admin privilege
-		if(!isCreator && !isAssignee) {
+		if(!permissionService.canModifyTask(currentUser, task)) {
 			throw new RuntimeException("Not authorized to update this task");
 		}
 		
@@ -115,11 +104,9 @@ public class TaskService {
 		task.setStatus(request.getStatus());
 		task.setDescription(request.getDescription());
 		
-		// Only owner can change assignee
-		// TODO: Add admin privilege
 		if(request.getAssigneeEmail() != null) {
-			if(!task.getCreator().getId().equals(currentUser.getId())) {
-				throw new RuntimeException("Only task creator can reassign task");
+			if(!permissionService.canChangeTaskAssignee(currentUser, task)) {
+				throw new RuntimeException("Task assignee can't reassign task");
 			}
 			User assignee = userRepository.findByEmail(request.getAssigneeEmail())
 					.orElseThrow(() -> new RuntimeException("Assignee not found"));
@@ -137,9 +124,7 @@ public class TaskService {
 		Task task = taskRepository.findById(id)
 				.orElseThrow(() -> new RuntimeException("Task not found"));
 	
-		// Access check
-		// TODO: Add admin privilege
-		if(!task.getCreator().getId().equals(currentUser.getId())) {
+		if(!permissionService.canDeleteTask(currentUser, task)) {
 			throw new RuntimeException("Not authorized to delete this task");
 		}
 		
@@ -165,19 +150,7 @@ public class TaskService {
 				.updatedAt(task.getUpdatedAt())
 				.build();
 		}
-	
-	private boolean isUserInvolvedWithProject(String userEmail, Project project) {
-		// Check if is owner
-		if(project.getOwner().getEmail().equals((userEmail))) {
-			return true;
-		}
-		
-		// Check if user has any tasks assigned in this project
-		List<Task> projectTasks = taskRepository.findByProject(project);
-		return projectTasks.stream()
-				.anyMatch(task -> 	task.getAssignee() != null &&
-									task.getAssignee().getEmail().equals(userEmail));
-	}
+
 	
 	private User getAuthenticatedUser() {
 		   String userEmail = SecurityContextHolder.getContext().getAuthentication().getName();

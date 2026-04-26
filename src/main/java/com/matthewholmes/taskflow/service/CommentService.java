@@ -10,7 +10,6 @@ import org.springframework.transaction.annotation.Transactional;
 import com.matthewholmes.taskflow.dto.CommentRequest;
 import com.matthewholmes.taskflow.dto.CommentResponse;
 import com.matthewholmes.taskflow.model.Comment;
-import com.matthewholmes.taskflow.model.Project;
 import com.matthewholmes.taskflow.model.Task;
 import com.matthewholmes.taskflow.model.User;
 import com.matthewholmes.taskflow.repository.CommentRepository;
@@ -26,6 +25,7 @@ public class CommentService {
 	private final CommentRepository commentRepository;
 	private final TaskRepository taskRepository;
 	private final UserRepository userRepository;
+	private final PermissionService permissionService;
 	
 	@Transactional
 	public CommentResponse createComment(CommentRequest request) {
@@ -34,9 +34,7 @@ public class CommentService {
 		Task task = taskRepository.findById(request.getTaskId())
 				.orElseThrow(() -> new RuntimeException("Task not found"));
 		
-		// Check access
-		// TODO: Add admin privilege
-		if(!isUserInvolvedWithProject(currentUser.getEmail(),task.getProject())) {
+		if(!permissionService.canViewTask(currentUser, task)) {
 			throw new RuntimeException("Not authorized to access this project");
 		}
 		
@@ -56,9 +54,7 @@ public class CommentService {
 		Task task = taskRepository.findById(taskId)
 				.orElseThrow(() -> new RuntimeException("Task not found"));
 		
-		// Check access
-		// TODO: Add admin privilege
-		if(!isUserInvolvedWithProject(currentUser.getEmail(), task.getProject())) {
+		if(!permissionService.canViewTask(currentUser, task)) {
 			throw new RuntimeException("Not authorized to access this task");
 		}
 		
@@ -75,9 +71,7 @@ public class CommentService {
 		Comment comment = commentRepository.findById(id)
 				.orElseThrow(() -> new RuntimeException("Comment not found"));
 		
-		// Check access
-		// TODO: Add admin privilege
-		if(!isUserInvolvedWithProject(currentUser.getEmail(), comment.getTask().getProject())) {
+		if(!permissionService.canViewTask(currentUser, comment.getTask())) {
 			throw new RuntimeException("Not authorized to access this task");
 		}
 		
@@ -91,9 +85,7 @@ public class CommentService {
 		Comment comment = commentRepository.findById(id)
 				.orElseThrow(() -> new RuntimeException("Comment not found"));
 		
-		// Check access
-		// TODO: Add admin privilege
-		if(!currentUser.getId().equals(comment.getAuthor().getId())) {
+		if(!comment.getAuthor().getId().equals(currentUser.getId())) {
 			throw new RuntimeException("Not authorized to edit this comment");
 		}
 		
@@ -110,12 +102,7 @@ public class CommentService {
 		Comment comment = commentRepository.findById(id)
 				.orElseThrow(() -> new RuntimeException("Comment not found"));
 		
-		boolean isAuthor = currentUser.getId().equals(comment.getAuthor().getId());
-		boolean isProjectOwner = currentUser.getId().equals(comment.getTask().getProject().getOwner().getId());
-		
-		// Check access
-		// TODO: Add admin privelege
-		if(!isAuthor && !isProjectOwner) {
+		if(!permissionService.canDeleteComment(currentUser, comment)) {
 			throw new RuntimeException("Not authorized to delete this comment");
 		}
 		
@@ -140,16 +127,4 @@ public class CommentService {
 		           .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
 	}
 	
-	private boolean isUserInvolvedWithProject(String userEmail, Project project) {
-		// Check if is owner
-		if(project.getOwner().getEmail().equals((userEmail))) {
-			return true;
-		}
-		
-		// Check if user has any tasks assigned in this project
-		List<Task> projectTasks = taskRepository.findByProject(project);
-		return projectTasks.stream()
-				.anyMatch(task -> 	task.getAssignee() != null &&
-									task.getAssignee().getEmail().equals(userEmail));
-	}
 }
